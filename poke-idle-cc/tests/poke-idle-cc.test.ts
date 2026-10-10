@@ -3,7 +3,7 @@ import * as G from '../hooks/game/engine.js'
 
 // What Claude Code passes to a ui.render hook for the pane, apart from the app
 const PANE = {
-  plugin: 'pokeidle',
+  plugin: 'poke-idle-cc',
   component: 'Pane',
   requestId: 'pokeidle',
   viewport: { columns: 140, rows: 60 },
@@ -277,7 +277,7 @@ test('Claude working opens no pane', async ($, on) => {
 })
 
 const SPINNER = {
-  plugin: 'pokeidle',
+  plugin: 'poke-idle-cc',
   component: 'Spinner',
   requestId: 'main',
   viewport: { columns: 140, rows: 60 },

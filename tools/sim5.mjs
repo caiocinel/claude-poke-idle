@@ -1,5 +1,5 @@
 // Which species a long game never catches
-import * as G from '../pokeidle/hooks/game/engine.js'
+import * as G from '../poke-idle-cc/hooks/game/engine.js'
 const s = G.newGame(Math.random, Number(process.argv[2] || 4))
 for (let i = 0; i < 25000; i++) G.step(s, Math.random)
 const miss = []

@@ -1,4 +1,4 @@
-"""Build pokeidle/hooks/data/gen1.js from the PokeAPI CSV dump.
+"""Build poke-idle-cc/hooks/data/gen1.js from the PokeAPI CSV dump.
 
 Usage: python -I tools/gendata.py <raw_dir> <out_js>
 

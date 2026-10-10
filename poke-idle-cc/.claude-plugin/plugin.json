@@ -1,5 +1,5 @@
 {
-  "name": "pokeidle",
+  "name": "poke-idle-cc",
   "version": "1.2.0",
   "description": "An idle Pokémon (Gen 1) adventure that plays while Claude works: battles, catches, gyms, and a pane to manage party, PC, bag, Mart, map and Pokédex",
   "author": { "name": "caioc" }

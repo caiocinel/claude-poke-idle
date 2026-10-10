@@ -23,7 +23,7 @@ for kv in os.environ.get('DRIVE_ENV', '').split(','):
     if '=' in kv:
         k, v = kv.split('=', 1)
         env[k] = v
-plugin = os.path.abspath('pokeidle')
+plugin = os.path.abspath('poke-idle-cc')
 proc = PtyProcess.spawn(['claude', '--plugin-dir', plugin], dimensions=(ROWS, COLS), env=env, cwd=os.path.abspath('_sandbox'))
 lock = threading.Lock()
 

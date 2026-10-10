@@ -1,5 +1,5 @@
 // Pokédex completion after the League, in hours of Claude work
-import * as G from '../pokeidle/hooks/game/engine.js'
+import * as G from '../poke-idle-cc/hooks/game/engine.js'
 const s = G.newGame(Math.random, Number(process.argv[2] || 4))
 for (let i = 0; i < 40000; i++) {
   G.step(s, Math.random)

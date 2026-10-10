@@ -1,5 +1,5 @@
 // Hours of Claude work (5 s per step) until each badge, default settings
-import * as G from '../pokeidle/hooks/game/engine.js'
+import * as G from '../poke-idle-cc/hooks/game/engine.js'
 for (const starter of [1, 4, 7, 25]) {
   const s = G.newGame(Math.random, starter)
   const at = []

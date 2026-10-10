@@ -12,21 +12,21 @@ Tested with Claude Code v2.1.292 – v2.1.296.
 Load it for one session:
 
 ```bash
-claude --plugin-dir ./pokeidle
+claude --plugin-dir ./poke-idle-cc
 ```
 
 To install it for every session, add the folder that holds this one as a marketplace (it has a
-`.claude-plugin/marketplace.json` named `pokeidle-local`), then install from it:
+`.claude-plugin/marketplace.json` named `claude-poke-idle`), then install from it:
 
 ```bash
 claude plugin marketplace add /path/to/codingidlegame
-claude plugin install pokeidle@pokeidle-local
+claude plugin install poke-idle-cc@claude-poke-idle
 ```
 
 From GitHub, in one step (the repository is private, so you need access to it):
 
 ```text
-/plugin install pokeidle --marketplace caiocinel/pokeidle
+/plugin install poke-idle-cc --marketplace caiocinel/claude-poke-idle
 ```
 
 Then run `/pokeidle`, enter a trainer name, and pick your starter: Bulbasaur, Charmander, Squirtle or Pikachu.
@@ -125,7 +125,7 @@ the game, so it never runs twice as fast; the others follow it. You can manage t
 ## Development
 
 ```text
-pokeidle/
+poke-idle-cc/
 ├── .claude-plugin/plugin.json
 ├── hooks/
 │   ├── hooks.json
@@ -140,8 +140,8 @@ pokeidle/
 ```
 
 ```bash
-claude plugin validate ./pokeidle
-cd pokeidle && claude plugin test
+claude plugin validate ./poke-idle-cc
+cd poke-idle-cc && claude plugin test
 ```
 
 `data/gen1.js` and `data/sprites.js` are generated from the [PokeAPI](https://github.com/PokeAPI/pokeapi) CSV dump
