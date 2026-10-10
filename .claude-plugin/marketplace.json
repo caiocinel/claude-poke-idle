@@ -1,7 +1,14 @@
 {
   "name": "pokeidle-local",
-  "owner": { "name": "caioc" },
+  "owner": {
+    "name": "caioc"
+  },
+  "description": "PokeIdle, a Gen 1 Pokémon idle game mod for Claude Code",
   "plugins": [
-    { "name": "pokeidle", "source": "./pokeidle", "description": "An idle Pokémon (Gen 1) adventure that plays while Claude works" }
+    {
+      "name": "pokeidle",
+      "source": "./pokeidle",
+      "description": "An idle Pokémon (Gen 1) adventure that plays while Claude works"
+    }
   ]
 }
