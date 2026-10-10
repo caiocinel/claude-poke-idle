@@ -1,0 +1,10 @@
+# Downloaded PokeAPI data, regenerated with tools/gendata.py and tools/sprites.py
+_raw/
+# Local test harness
+_venv/
+_sandbox/
+_shots/
+# Written by Claude Code when it loads the mod
+pokeidle/.claude-plugin/types/
+pokeidle/tsconfig.json
+__pycache__/

@@ -1,0 +1,7 @@
+{
+  "name": "pokeidle-local",
+  "owner": { "name": "caioc" },
+  "plugins": [
+    { "name": "pokeidle", "source": "./pokeidle", "description": "An idle Pokémon (Gen 1) adventure that plays while Claude works" }
+  ]
+}
