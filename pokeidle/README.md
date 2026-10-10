@@ -23,10 +23,10 @@ claude plugin marketplace add /path/to/codingidlegame
 claude plugin install pokeidle@pokeidle-local
 ```
 
-Once that folder is pushed to a GitHub repository, others can install it in one step:
+From GitHub, in one step (the repository is private, so you need access to it):
 
 ```text
-/plugin install pokeidle --marketplace <owner>/<repo>
+/plugin install pokeidle --marketplace caiocinel/pokeidle
 ```
 
 Then run `/pokeidle`, enter a trainer name, and pick your starter: Bulbasaur, Charmander, Squirtle or Pikachu.
