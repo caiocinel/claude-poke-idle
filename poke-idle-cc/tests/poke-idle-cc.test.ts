@@ -462,12 +462,19 @@ function fakeServer(on, handlers: Record<string, (body: any, auth?: string) => [
   return calls
 }
 
-test('signing in by email links the machine and syncs the save', async ($, on) => {
-  const { saved } = setup(on)
+test('signing in with GitHub links the machine and syncs the save', async ($, on) => {
+  const { saved, clock } = setup(on)
+  on('ui.copy', () => ({ value: { isCopied: true } }))
+  const logs: string[] = []
+  on('ui.log', ($, e) => {
+    logs.push(e.text)
+    return { value: undefined }
+  })
   let serverSave: any = null
+  let polls = 0
   const calls = fakeServer(on, {
-    'POST /auth/start': (b) => [200, { ok: true }],
-    'POST /auth/verify': (b) => (b.code === '123456' ? [200, { token: 'tok', email: b.email }] : [400, { error: 'Wrong code.' }]),
+    'POST /login/start': () => [200, { id: 'L1', code: 'ABCD-1234', url: 'https://github.com/login/device', interval: 5, expiresIn: 900 }],
+    'POST /login/poll': (b) => (++polls < 2 ? [202, { pending: true, interval: 5 }] : [200, { token: 'tok', login: 'ash' }]),
     'GET /save': () => [200, { save: serverSave, savedAt: serverSave ? serverSave.savedAt : null }],
     'PUT /save': (b, auth) => {
       expect(auth).toBe('Bearer tok')
@@ -479,58 +486,57 @@ test('signing in by email links the machine and syncs the save', async ($, on) =
   await start($)
   const first = await pickStarter($)
   await first.unmount()
-  const sent = await $.command.run({ command: 'pokeidle', args: 'login Ash@Example.com' })
-  expect(sent.text).toMatch(/code went to/)
-  const bad = await $.command.run({ command: 'pokeidle', args: 'code 000000' })
-  expect(bad.text).toBe('Wrong code.')
-  const ok = await $.command.run({ command: 'pokeidle', args: 'code 123456' })
-  expect(ok.text).toMatch(/Signed in as ash@example.com/)
+  const sent = await $.command.run({ command: 'pokeidle', args: 'login' })
+  expect(sent.text).toMatch(/enter the code ABCD-1234 \(copied/)
+  // The timer polls until the player approves on GitHub
+  await clock.advance(12_000)
+  expect(logs.at(-1)).toMatch(/Signed in as @ash/)
   expect((saved.get('account') as any).token).toBe('tok')
   expect(serverSave.party[0].s).toBe(25)
-  expect(calls).toContain('PUT /save')
+  expect(calls.filter((c) => c === 'POST /login/poll').length).toBe(2)
 })
 
 test('a newer save from another machine replaces this one at start', async ($, on) => {
   const late = lateGame()
   late.savedAt = 2_000_000_000_000
-  const { saved } = setup(on, { account: { email: 'ash@example.com', token: 'tok' }, save: { ...lateGame(), savedAt: 1 } })
+  const { saved } = setup(on, { account: { login: 'ash', token: 'tok' }, save: { ...lateGame(), savedAt: 1 } })
   fakeServer(on, {
     'GET /save': () => [200, { save: late, savedAt: late.savedAt }],
-    'GET /inbox': () => [200, { battles: [{ id: 1, challenger: 'gary@example.com', won: true, draw: false, prize: 1500, summary: 'Blue wins!' }] }],
+    'GET /inbox': () => [200, { battles: [{ id: 1, challenger: 'gary', won: true, draw: false, prize: 1500, summary: 'Blue wins!' }] }],
     'PUT /save': (b) => [200, { ok: true, savedAt: b.save.savedAt }],
   })
   await start($)
   const status = await $.command.run({ command: 'pokeidle', args: 'status' })
-  expect(status.text).toMatch(/Signed in as ash@example.com/)
+  expect(status.text).toMatch(/Signed in as @ash/)
   expect(status.text).toMatch(new RegExp(`₽${late.money + 1500}`))
 })
 
-test('a battle by email pays a prize and logs the result', async ($, on) => {
-  const { saved } = setup(on, { account: { email: 'ash@example.com', token: 'tok' } })
+test('a battle by GitHub username pays a prize and logs the result', async ($, on) => {
+  const { saved } = setup(on, { account: { login: 'ash', token: 'tok' } })
   fakeServer(on, {
     'GET /save': () => [200, { save: null, savedAt: null }],
     'GET /inbox': () => [200, { battles: [] }],
     'PUT /save': (b) => [200, { ok: true, savedAt: b.save.savedAt }],
-    'POST /battle': (b) => (b.opponent === 'gary@example.com'
-      ? [200, { you: 'Red', them: 'Gary', won: true, draw: false, prize: 1500, log: ['Red challenges Gary!', 'Red wins with 1 Pokémon standing!'], turns: 3 }]
-      : [404, { error: `${b.opponent} has no PokeIdle team yet.` }]),
+    'POST /battle': (b) => (b.opponent === 'gary'
+      ? [200, { you: 'Red', them: 'Gary', opponent: 'gary', won: true, draw: false, prize: 1500, log: ['Red challenges Gary!', 'Red wins with 1 Pokémon standing!'], turns: 3 }]
+      : [404, { error: `@${b.opponent} has no PokeIdle team yet.` }]),
   })
   await start($)
   const first = await pickStarter($)
   await first.unmount()
   const money = (saved.get('save') as any).money
-  const r = await $.command.run({ command: 'pokeidle', args: 'battle gary@example.com' })
+  const r = await $.command.run({ command: 'pokeidle', args: 'battle @gary' })
   expect(r.text).toMatch(/You won! \+₽1500/)
   expect((saved.get('save') as any).money).toBe(money + 1500)
-  const miss = await $.command.run({ command: 'pokeidle', args: 'battle nobody@x.com' })
-  expect(miss.text).toBe('nobody@x.com has no PokeIdle team yet.')
+  const miss = await $.command.run({ command: 'pokeidle', args: 'battle nobody' })
+  expect(miss.text).toBe('@nobody has no PokeIdle team yet.')
 })
 
 test('without an account, online commands ask to sign in and nothing goes out', async ($, on) => {
   setup(on)
   const calls = fakeServer(on, {})
   await start($)
-  const r = await $.command.run({ command: 'pokeidle', args: 'battle gary@example.com' })
-  expect(r.text).toMatch(/Sign in first/)
+  const r = await $.command.run({ command: 'pokeidle', args: 'battle gary' })
+  expect(r.text).toMatch(/Sign in with GitHub first/)
   expect(calls).toEqual([])
 })

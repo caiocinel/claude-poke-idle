@@ -5,7 +5,7 @@ WORKDIR /app
 COPY poke-idle-cc/hooks/game ./engine
 COPY poke-idle-cc/hooks/data ./data-gen
 RUN sed -i "s#'../data/#'../data-gen/#g" engine/*.js
-COPY server/server.js server/smtp.js server/package.json ./
+COPY server/server.js server/package.json ./
 RUN mkdir -p /app/data && chown node:node /app/data
 USER node
 ENV NODE_NO_WARNINGS=1 DB_PATH=/app/data/pokeidle.db PORT=8090

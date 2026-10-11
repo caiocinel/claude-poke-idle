@@ -2,5 +2,5 @@
   "name": "pokeidle-server",
   "private": true,
   "type": "module",
-  "description": "Sign-in, save sync and battles between players for the PokeIdle mod"
+  "description": "GitHub sign-in, save sync and battles between players for the PokeIdle mod"
 }
