@@ -116,6 +116,29 @@ Pokémon.
 The block goes away with the spinner when Claude finishes. The pane only opens when you run `/pokeidle`, and closes
 with Esc. `/pokeidle status` prints a text summary, and also works in `claude -p`.
 
+## Playing online
+
+Sign in with your email to sync the game between machines and battle other players:
+
+| Command | What it does |
+| :- | :- |
+| `/pokeidle login you@example.com` | Emails you a 6-digit code |
+| `/pokeidle code 123456` | Links this machine. Do it once on each machine |
+| `/pokeidle battle friend@example.com` | Battles a friend's team, by their email. Prize: ₽1,500 for a win, ₽300 otherwise |
+| `/pokeidle ranking` | The top trainers by rating |
+| `/pokeidle history` | Your last battles |
+| `/pokeidle logout` | Unlinks this machine |
+
+- **Sync**: the save goes up once a minute while you play and at the end of each of Claude's tasks. At the start of a
+  session, a newer save from another machine replaces this one.
+- **Battles** run on the server with the game's own engine, from the teams the server has, so a result can't be faked
+  by editing a save. Levels are capped at the weaker team's best, so a new trainer can still take on a veteran. Being
+  challenged while away pays the prize the next time you start Claude Code.
+- **Privacy**: the server keeps your email, your save and your party. Other players see your trainer name, your
+  party, your record and a shortened email in the ranking.
+
+The server lives in `server/` of the repository and runs at `https://pokeidle.caiocinel.com`.
+
 ## Saving
 
 The game is saved in the mod's `$.store` (`~/.claude/plugins/store/`) every few seconds and at the end of each turn,

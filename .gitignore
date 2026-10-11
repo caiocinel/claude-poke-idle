@@ -8,3 +8,5 @@ _shots/
 pokeidle/.claude-plugin/types/
 pokeidle/tsconfig.json
 __pycache__/
+# Server database
+server/data/

@@ -13,6 +13,11 @@ import { paneTree, spinnerBlock, statusText, TABS } from './ui.js'
 const PANE = 'pokeidle'
 const PANE_COLUMNS = 64
 const SAVE_KEY = 'save'
+// The account link to the PokeIdle server: { email, token }, never sent elsewhere
+const ACCOUNT_KEY = 'account'
+const SERVER = 'https://pokeidle.caiocinel.com'
+// Saves go up at most this often, and at the end of every turn
+const SYNC_EVERY_MS = 60_000
 const OWNER_KEY = 'owner'
 const OWNER_STALE_MS = 20000
 // How often the session refreshes its claim on the save, or checks another's
@@ -41,6 +46,10 @@ let dirty = false
 let lastSave = 0
 let lastStep = 0
 let lastOwnerCheck = 0
+let account = null
+let lastSync = 0
+// The email a code was sent to, waiting for /pokeidle code
+let pendingEmail = ''
 // Subagents draw spinners of their own; the game shows only under the main one
 const subagents = new Set()
 let ui = { tab: 'battle', sel: { party: null, pc: null, bag: null, dex: 0 }, page: { pc: 0, dex: 0 }, pcSort: 'recent', confirm: null, msg: null, trainer: '' }
@@ -79,6 +88,127 @@ async function save($) {
   await $.store.set(SAVE_KEY, state)
   dirty = false
   lastSave = state.savedAt
+  if (account && !follower && state.savedAt - lastSync >= SYNC_EVERY_MS) await pushSave($)
+}
+
+// ---------- the PokeIdle server: sign-in, sync between machines, battles ----------
+
+async function api($, method, path, body) {
+  const headers = { 'content-type': 'application/json' }
+  if (account) headers.authorization = 'Bearer ' + account.token
+  try {
+    const res = await $.http.fetch(SERVER + path, { method, headers, body: body ? JSON.stringify(body) : undefined })
+    let data = {}
+    try {
+      data = JSON.parse(res.text)
+    } catch {
+      data = { error: `The server answered ${res.status}.` }
+    }
+    if (res.status === 401 && account) {
+      account = null
+      await $.store.delete(ACCOUNT_KEY)
+    }
+    return res.ok ? data : { error: data.error || `The server answered ${res.status}.` }
+  } catch {
+    return { error: 'Could not reach the PokeIdle server.' }
+  }
+}
+
+async function pushSave($) {
+  if (!state || !account) return
+  lastSync = state.savedAt
+  const r = await api($, 'PUT', '/save', { save: state, team: G.teamSnapshot(state) })
+  // The server had a newer save, from another machine: take it
+  if (r.save && r.savedAt > state.savedAt) {
+    state = G.migrate(r.save)
+    await $.store.set(SAVE_KEY, state)
+    redraw($)
+  }
+}
+
+// At start: take the server's save when it is newer than this machine's
+async function pullSave($) {
+  if (!account) return
+  const r = await api($, 'GET', '/save')
+  if (r.error || !r.save) return
+  if (!state || (r.savedAt || 0) > (state.savedAt || 0)) {
+    state = G.migrate(r.save)
+    await $.store.set(SAVE_KEY, state)
+    G.log(state, 'Synced from another machine.')
+  }
+}
+
+// Battles other players started against this one while it was away
+async function claimInbox($) {
+  if (!account || !state) return
+  const r = await api($, 'GET', '/inbox')
+  for (const b of r.battles || []) {
+    if (b.prize) state.money += b.prize
+    G.log(state, `${b.challenger} challenged you: ${b.summary}${b.prize ? ` +₽${b.prize}` : ''}`, b.won ? 'rare' : 'info')
+    dirty = true
+  }
+}
+
+async function online($, words) {
+  const [sub, ...rest] = words
+  const arg = rest.join(' ').trim()
+  if (sub === 'login') {
+    if (!arg) return 'Usage: /pokeidle login you@example.com'
+    const r = await api($, 'POST', '/auth/start', { email: arg })
+    if (r.error) return r.error
+    pendingEmail = arg.toLowerCase()
+    return `A 6-digit code went to ${arg}. Run /pokeidle code <code> to finish.`
+  }
+  if (sub === 'code') {
+    if (!pendingEmail) return 'Run /pokeidle login <email> first.'
+    const r = await api($, 'POST', '/auth/verify', { email: pendingEmail, code: arg, label: sessionId.slice(0, 8) })
+    if (r.error) return r.error
+    account = { email: r.email, token: r.token }
+    pendingEmail = ''
+    await $.store.set(ACCOUNT_KEY, account)
+    await pullSave($)
+    if (state) {
+      lastSync = 0
+      await save($)
+    }
+    redraw($)
+    return `Signed in as ${account.email}. Your game now syncs between machines, and others can battle you by this email.`
+  }
+  if (sub === 'logout') {
+    account = null
+    await $.store.delete(ACCOUNT_KEY)
+    return 'Signed out. The game stays on this machine.'
+  }
+  if (!account) return 'Sign in first: /pokeidle login you@example.com'
+  if (sub === 'battle') {
+    if (!state) return 'Pick your first Pokémon first: /pokeidle'
+    if (!arg) return 'Usage: /pokeidle battle friend@example.com'
+    // The server fights with the team it has: send the current one first
+    lastSync = 0
+    await save($)
+    const r = await api($, 'POST', '/battle', { opponent: arg })
+    if (r.error) return r.error
+    state.money += r.prize
+    G.log(state, `Battle vs ${r.them} (${arg}): ${r.draw ? 'draw' : r.won ? 'you won!' : 'you lost'} +₽${r.prize}`, r.won ? 'rare' : 'info')
+    await save($)
+    redraw($)
+    const shown = r.log.length > 24 ? [...r.log.slice(0, 4), `… ${r.log.length - 12} more lines …`, ...r.log.slice(-8)] : r.log
+    return [...shown, '', r.draw ? 'Draw.' : r.won ? `You won! +₽${r.prize}` : `You lost. +₽${r.prize} for trying.`].join('\n')
+  }
+  if (sub === 'ranking') {
+    const r = await api($, 'GET', '/ranking')
+    if (r.error) return r.error
+    const rows = r.top.map((p, i) => `${String(i + 1).padStart(2)}. ${p.name.padEnd(12)} ${String(p.rating).padStart(4)}  ${p.wins}W ${p.losses}L  ${p.badges} badges  Dex ${p.dex}  ${p.player}`)
+    const me = r.me ? `You: rating ${r.me.rating}, ${r.me.wins}W ${r.me.losses}L` : ''
+    return ['PokeIdle ranking', ...rows, '', me].join('\n')
+  }
+  if (sub === 'history') {
+    const r = await api($, 'GET', '/battles')
+    if (r.error) return r.error
+    if (!r.battles.length) return 'No battles yet. Try /pokeidle battle friend@example.com'
+    return r.battles.map((b) => `${new Date(b.at).toISOString().slice(0, 16).replace('T', ' ')}  ${b.challenged ? 'vs' : 'by'} ${b.opponent}  ${b.draw ? 'draw' : b.won ? 'won' : 'lost'}`).join('\n')
+  }
+  return null
 }
 
 function offlineProgress(state, now) {
@@ -204,8 +334,11 @@ function setView($, patch) {
 export function register(on) {
   on('session.start', async ($, e, next) => {
     sessionId = await $.session.id()
+    account = (await $.store.get(ACCOUNT_KEY)) || null
     await loadSave($)
+    await pullSave($)
     await claimOwner($)
+    await claimInbox($)
     if (state && !follower) {
       offlineProgress(state, await $.clock.now())
       await save($)
@@ -214,7 +347,7 @@ export function register(on) {
     await $.command.register({
       name: 'pokeidle',
       description: 'Open PokeIdle: your Pokémon adventure that plays while Claude works',
-      argumentHint: '[battle|party|pc|bag|mart|map|dex|options|status]',
+      argumentHint: '[party|pc|bag|mart|map|dex|options|status|login <email>|battle <email>|ranking|history]',
       immediate: true,
     })
     return next(e)
@@ -259,6 +392,7 @@ export function register(on) {
       dirty = true
     }
     redraw($)
+    lastSync = 0
     await save($)
     return next(e)
   })
@@ -279,8 +413,12 @@ export function register(on) {
   }).catch(async ($, e, next) => next(e))
 
   on('command.run', { command: 'pokeidle' }, async ($, e) => {
-    const arg = (e.args || '').trim().toLowerCase()
-    if (arg === 'status') return { text: statusText(state) }
+    const words = (e.args || '').trim().split(/\s+/).filter(Boolean)
+    const arg = (words[0] || '').toLowerCase()
+    if (arg === 'status') return { text: statusText(state) + (account ? `\nSigned in as ${account.email}.` : '') }
+    if (['login', 'code', 'logout', 'battle', 'ranking', 'history'].includes(arg)) {
+      return { text: await online($, [arg, ...words.slice(1)]) }
+    }
     const surfaces = await $.session.surfaces()
     if (!surfaces.length) return { text: statusText(state) }
     const tab = TABS.find(([id, name]) => id === arg || name.toLowerCase() === arg)

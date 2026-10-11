@@ -1366,3 +1366,110 @@ export function releaseDuplicates(state) {
   log(state, `Released ${gone} duplicate Pokémon. Prof. Oak sent ₽${money}.`)
   return null
 }
+
+// ---------- battles between players ----------
+
+// The part of a team another player gets to see and fight: species, level,
+// DVs, moves and nickname. Nothing else of the save leaves the machine.
+export function teamSnapshot(state) {
+  return {
+    name: state.name,
+    badges: state.badges,
+    dex: dexCounts(state).caught,
+    team: state.party.map((m) => ({ s: m.s, lv: m.lv, dv: m.dv, mv: m.mv, nk: m.nk, sh: m.sh })),
+  }
+}
+
+// A snapshot sent by a client is untrusted: keep only valid Gen 1 data
+export function cleanSnapshot(snap) {
+  if (!snap || !Array.isArray(snap.team)) return null
+  const int = (v, lo, hi) => Number.isInteger(v) && v >= lo && v <= hi
+  const team = snap.team.slice(0, MAX_PARTY).filter((m) =>
+    m && int(m.s, 1, 151) && int(m.lv, 1, 100) && Array.isArray(m.dv) && m.dv.length === 4 && m.dv.every((d) => int(d, 0, 15)) &&
+    Array.isArray(m.mv) && m.mv.length >= 1 && m.mv.length <= 4 && m.mv.every((id) => int(id, 1, 165)),
+  ).map((m) => ({
+    s: m.s, lv: m.lv, dv: m.dv, mv: m.mv,
+    ...(typeof m.nk === 'string' && m.nk.trim() ? { nk: m.nk.replace(/[\u0000-\u001f]/g, '').slice(0, 12) } : {}),
+    ...(m.sh ? { sh: 1 } : {}),
+  }))
+  if (!team.length) return null
+  return {
+    name: String(snap.name || 'Trainer').replace(/[\u0000-\u001f]/g, '').slice(0, 12) || 'Trainer',
+    badges: int(snap.badges, 0, 9) ? snap.badges : 0,
+    dex: int(snap.dex, 0, 151) ? snap.dex : 0,
+    team,
+  }
+}
+
+// Plays two snapshots against each other with a seeded rng: the same seed
+// always gives the same battle. Levels are capped at the lower team's best, so
+// a new player can still take on a veteran.
+export function pvpBattle(a, b, rng) {
+  const cap = Math.min(Math.max(...a.team.map((m) => m.lv)), Math.max(...b.team.map((m) => m.lv)))
+  let uid = 0
+  const build = (snap) => snap.team.map((m) => {
+    const mon = { u: 'pvp' + ++uid, s: m.s, lv: Math.min(m.lv, cap), dv: m.dv, mv: m.mv, nk: m.nk, sh: m.sh, st: null, xp: 0 }
+    mon.hp = maxHp(mon)
+    return mon
+  })
+  const sides = [build(a), build(b)]
+  const names = [a.name, b.name]
+  const out = []
+  const stages = [freshStages(), freshStages()]
+  const active = [0, 0]
+  const alive = (i) => sides[i].findIndex((m) => m.hp > 0)
+  const tag = (i, m) => `${names[i]}'s ${monName(m)}`
+  out.push(`${a.name} challenges ${b.name}! Levels capped at ${cap}.`)
+  out.push(`${names[0]} sends out ${monName(sides[0][0])}! ${names[1]} sends out ${monName(sides[1][0])}!`)
+  // useMove writes to state.log; a scratch state collects those lines
+  const scratch = { log: [], logSeq: 0, events: [], battle: null }
+  let turns = 0
+  while (alive(0) >= 0 && alive(1) >= 0 && turns < 300) {
+    turns++
+    const m0 = sides[0][active[0]]
+    const m1 = sides[1][active[1]]
+    const id0 = chooseMove(rng, m0, m1, stages[0], stages[1], true)
+    const id1 = chooseMove(rng, m1, m0, stages[1], stages[0], true)
+    const s0 = battleStat(m0, stages[0], 'spe') + (MOVES[id0].pr || 0) * 10000
+    const s1 = battleStat(m1, stages[1], 'spe') + (MOVES[id1].pr || 0) * 10000
+    const first = s0 > s1 || (s0 === s1 && rng() < 0.5) ? 0 : 1
+    for (const i of [first, 1 - first]) {
+      const att = sides[i][active[i]]
+      const def = sides[1 - i][active[1 - i]]
+      if (att.hp <= 0 || def.hp <= 0) continue
+      useMove(scratch, rng, att, def, stages[i], stages[1 - i], i === 0 ? id0 : id1, tag(i, att), tag(1 - i, def))
+    }
+    stages[0].flinch = 0
+    stages[1].flinch = 0
+    endOfTurnDamage(scratch, m0, tag(0, m0))
+    endOfTurnDamage(scratch, m1, tag(1, m1))
+    for (const l of scratch.log) out.push(l.t)
+    scratch.log = []
+    for (const i of [0, 1]) {
+      const cur = sides[i][active[i]]
+      if (cur.hp > 0) continue
+      out.push(`${tag(i, cur)} fainted!`)
+      const next = alive(i)
+      if (next >= 0) {
+        active[i] = next
+        stages[i] = freshStages()
+        out.push(`${names[i]} sends out ${monName(sides[i][next])}!`)
+      }
+    }
+  }
+  const left = [sides[0].filter((m) => m.hp > 0).length, sides[1].filter((m) => m.hp > 0).length]
+  const winner = left[0] === left[1] ? -1 : left[0] > left[1] ? 0 : 1
+  out.push(winner < 0 ? 'The battle ended in a draw!' : `${names[winner]} wins with ${left[winner]} Pokémon standing!`)
+  return { winner, left, turns, cap, log: out }
+}
+
+// A seeded generator, so a battle can be replayed from its seed
+export function seededRng(seed) {
+  let s = seed >>> 0
+  return () => {
+    s = (s + 0x6d2b79f5) | 0
+    let t = Math.imul(s ^ (s >>> 15), 1 | s)
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
